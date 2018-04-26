@@ -36,6 +36,30 @@ class ActiveStorage::Service::MirrorServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test "direct upload" do
+    begin
+      key      = SecureRandom.base58(24)
+      data     = "Something else entirely!"
+      io       = StringIO.new(data)
+      checksum = Digest::MD5.base64digest(data)
+      @service.upload key, io.tap(&:read), checksum: checksum
+      url      = @service.url_for_direct_upload(key, expires_in: 5.minutes, content_type: "text/plain", content_length: data.size, checksum: checksum)
+
+      uri = URI.parse url
+      request = Net::HTTP::Put.new uri.request_uri
+      request.body = data
+      request.add_field "Content-Type", "text/plain"
+      request.add_field "Content-MD5", checksum
+      Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
+        http.request request
+      end
+
+      assert_equal data, @service.download(key)
+    ensure
+      @service.delete key
+    end
+  end
+
   test "downloading from primary service" do
     key      = SecureRandom.base58(24)
     data     = "Something else entirely!"
